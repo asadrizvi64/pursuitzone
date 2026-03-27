@@ -64,8 +64,11 @@ export class GeofenceService {
 
     // Calculate distance from zone center
     const { rows: [dist] } = await this.db.query(
-      `SELECT haversine_distance($1, $2, $3, $4) as distance_m`,
-      [chase.zone_center_lat, chase.zone_center_lng, pos.lat, pos.lng]
+      `SELECT ST_Distance(
+        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+        ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography
+      ) as distance_m`,
+      [chase.zone_center_lng, chase.zone_center_lat, pos.lng, pos.lat]
     );
 
     const distanceM = dist.distance_m;

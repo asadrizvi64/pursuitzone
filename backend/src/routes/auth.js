@@ -4,15 +4,9 @@
 
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
-let twilioClient = null;
-try {
-  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-    const twilio = await import('twilio');
-    twilioClient = twilio.default(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-  }
-} catch (e) {
-  console.warn('[Auth] Twilio not configured — OTP codes will print to console');
-}
+import twilio from 'twilio';
+
+const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 export function setupAuthRoutes(db) {
   const router = Router();
@@ -34,7 +28,7 @@ export function setupAuthRoutes(db) {
       );
 
       // Send via Twilio
-      if (process.env.NODE_ENV === 'production' && twilioClient) {
+      if (process.env.NODE_ENV === 'production') {
         await twilioClient.messages.create({
           body: `PursuitZone: Your verification code is ${code}. Expires in 5 minutes.`,
           from: process.env.TWILIO_PHONE_NUMBER,

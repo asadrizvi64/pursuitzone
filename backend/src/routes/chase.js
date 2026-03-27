@@ -17,9 +17,9 @@ export function setupChaseRoutes(db, chaseEngine, economy) {
       const params = [];
 
       if (lat && lng) {
-        params.push(parseFloat(lat), parseFloat(lng), parseFloat(radiusKm) * 1000);
-        query += ` AND haversine_distance(zone_center_lat, zone_center_lng, $1, $2) <= $3`;
-        query += ` ORDER BY haversine_distance(zone_center_lat, zone_center_lng, $1, $2)`;
+        params.push(parseFloat(lng), parseFloat(lat), parseFloat(radiusKm) * 1000);
+        query += ` AND ST_DWithin(zone_center_geom, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)`;
+        query += ` ORDER BY ST_Distance(zone_center_geom, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography)`;
       } else {
         query += ` ORDER BY created_at DESC`;
       }
@@ -133,7 +133,7 @@ export function setupUserRoutes(db, economy) {
     const { lat, lng, altitude } = req.body;
     await db.query(
       `UPDATE users SET last_known_lat = $2, last_known_lng = $3, last_known_alt = $4,
-       last_location_at = NOW()
+       last_location_at = NOW(), location_geom = ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography
        WHERE id = $1`,
       [req.user.id, lat, lng, altitude]
     );
@@ -184,9 +184,9 @@ export function setupMatchmakingRoutes(db, matchmaking) {
        JOIN chase_zones z ON c.zone_id = z.id
        JOIN users u ON c.wanted_user_id = u.id
        WHERE c.status = 'matchmaking'
-       AND haversine_distance(c.zone_center_lat, c.zone_center_lng, $1, $2) <= c.matchmaking_broadcast_radius_km * 1000
+       AND ST_DWithin(c.zone_center_geom, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, c.matchmaking_broadcast_radius_km * 1000)
        ORDER BY c.wanted_level DESC, c.created_at ASC`,
-      [parseFloat(lat), parseFloat(lng)]
+      [parseFloat(lng), parseFloat(lat)]
     );
     res.json({ chases: rows });
   });

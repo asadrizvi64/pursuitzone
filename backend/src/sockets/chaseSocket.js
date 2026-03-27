@@ -23,15 +23,16 @@ export function setupSocketHandlers(io, chaseEngine, geofence, antiCollusion, no
         
         // Store in DB
         await chaseEngine.db.query(
-          `INSERT INTO gps_tracks (chase_id, user_id, lat, lng, altitude, accuracy, speed, heading, altitude_source, is_mock_location)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          `INSERT INTO gps_tracks (chase_id, user_id, lat, lng, altitude, accuracy, speed, heading, altitude_source, is_mock_location, geom)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography)`,
           [chaseId, userId, lat, lng, altitude, accuracy, speed, heading, altitudeSource, isMockLocation || false]
         );
 
         // Update user's last known position
         await chaseEngine.db.query(
           `UPDATE users SET last_known_lat = $2, last_known_lng = $3, last_known_alt = $4, 
-           last_location_at = NOW()
+           last_location_at = NOW(),
+           location_geom = ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography
            WHERE id = $1`,
           [userId, lat, lng, altitude]
         );
@@ -150,7 +151,8 @@ export function setupSocketHandlers(io, chaseEngine, geofence, antiCollusion, no
     socket.on('idle_location', async ({ lat, lng, altitude }) => {
       await chaseEngine.db.query(
         `UPDATE users SET last_known_lat = $2, last_known_lng = $3, last_known_alt = $4,
-         last_location_at = NOW()
+         last_location_at = NOW(),
+         location_geom = ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography
          WHERE id = $1`,
         [userId, lat, lng, altitude]
       );

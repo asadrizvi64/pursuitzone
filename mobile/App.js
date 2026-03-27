@@ -3,18 +3,11 @@
 // ═══════════════════════════════════════════════════════════════
 
 import React, { useEffect, useState } from 'react';
-import { StatusBar, LogBox, View } from 'react-native';
+import { StatusBar, LogBox } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
-// Stripe requires custom dev build — gracefully skip in Expo Go
-let StripeProvider;
-try {
-  StripeProvider = require('@stripe/stripe-react-native').StripeProvider;
-} catch (e) {
-  StripeProvider = ({ children }) => <>{children}</>;
-}
+import { StripeProvider } from '@stripe/stripe-react-native';
 
 import { connectSocket } from './src/services/api';
 import { locationService } from './src/services/location';
@@ -30,8 +23,6 @@ import BrowseChasesScreen from './src/screens/BrowseChasesScreen';
 import LiveChaseScreen from './src/screens/LiveChaseScreen';
 import ResultsScreen from './src/screens/ResultsScreen';
 import WalletScreen from './src/screens/WalletScreen';
-import DepositProofScreen from './src/screens/DepositProofScreen';
-import AdminDepositsScreen from './src/screens/AdminDepositsScreen';
 
 LogBox.ignoreLogs(['Non-serializable values']);
 
@@ -58,19 +49,11 @@ export default function App() {
   useEffect(() => {
     async function bootstrap() {
       try {
-        // 1. Request location permissions (non-fatal if denied)
-        try {
-          await locationService.requestPermissions();
-        } catch (err) {
-          console.warn('[App] Location permission not granted:', err.message);
-        }
+        // 1. Request location permissions
+        await locationService.requestPermissions();
 
-        // 2. Initialize push notifications (non-fatal in Expo Go)
-        try {
-          await pushService.initialize();
-        } catch (err) {
-          console.warn('[App] Push notifications not available:', err.message);
-        }
+        // 2. Initialize push notifications
+        await pushService.initialize();
 
         // 3. Setup notification handlers
         pushService.onChaseNotification((notif) => {
@@ -164,8 +147,6 @@ export default function App() {
                 />
                 <Stack.Screen name="Results" component={ResultsScreen} />
                 <Stack.Screen name="Wallet" component={WalletScreen} />
-                <Stack.Screen name="DepositProof" component={DepositProofScreen} />
-                <Stack.Screen name="AdminDeposits" component={AdminDepositsScreen} />
               </>
             )}
           </Stack.Navigator>

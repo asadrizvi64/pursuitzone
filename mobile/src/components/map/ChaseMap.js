@@ -80,7 +80,7 @@ export default function ChaseMap({
       <MapView
         ref={mapRef}
         style={styles.map}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        provider={PROVIDER_GOOGLE}
         initialRegion={region}
         customMapStyle={DARK_MAP_STYLE}
         showsUserLocation={false} // We render custom marker

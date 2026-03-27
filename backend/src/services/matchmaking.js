@@ -208,10 +208,13 @@ export class MatchmakingService {
     
     if (wantedPos && policePos) {
       const { rows: [dist] } = await this.db.query(
-        `SELECT haversine_distance($1, $2, $3, $4) as distance_m`,
-        [wantedPos.last_known_lat, wantedPos.last_known_lng, policePos.last_known_lat, policePos.last_known_lng]
+        `SELECT ST_Distance(
+          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+          ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography
+        ) as distance_m`,
+        [wantedPos.last_known_lng, wantedPos.last_known_lat, policePos.last_known_lng, policePos.last_known_lat]
       );
-
+      
       if (dist.distance_m < 2000) {
         throw new Error('Too close to target. Must be 2km+ away to join. Anti-collusion policy.');
       }
@@ -227,9 +230,11 @@ export class MatchmakingService {
     await this.db.query(
       `INSERT INTO chase_participants (chase_id, user_id, fee_paid, start_distance_m, status)
        VALUES ($1, $2, $3, $4, 'queued')`,
-      [chaseId, userId, chase.police_ticket, wantedPos && policePos ? (await this.db.query(
-        `SELECT haversine_distance($1, $2, $3, $4) as d`,
-        [wantedPos.last_known_lat, wantedPos.last_known_lng, policePos.last_known_lat, policePos.last_known_lng]
+      [chaseId, userId, chase.police_ticket, wantedPos ? (await this.db.query(
+        `SELECT ST_Distance(
+          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+          ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography
+        ) as d`, [wantedPos.last_known_lng, wantedPos.last_known_lat, policePos.last_known_lng, policePos.last_known_lat]
       )).rows[0].d : null]
     );
 

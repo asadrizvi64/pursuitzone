@@ -12,9 +12,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#080808"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "io.pursuitzone.app",
@@ -22,11 +20,7 @@
         "NSLocationWhenInUseUsageDescription": "PursuitZone needs your location for live chase tracking and geofence enforcement.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "PursuitZone needs background location to track your chase position even when the app is minimized.",
         "NSMotionUsageDescription": "PursuitZone uses motion sensors for altitude detection and anti-spoofing.",
-        "UIBackgroundModes": [
-          "location",
-          "fetch",
-          "remote-notification"
-        ]
+        "UIBackgroundModes": ["location", "fetch", "remote-notification"]
       },
       "config": {
         "googleMapsApiKey": "YOUR_IOS_MAPS_KEY"
@@ -58,7 +52,6 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "PursuitZone needs your location for live chase tracking and geofence enforcement.",
           "locationAlwaysAndWhenInUsePermission": "PursuitZone needs background location for live chase tracking.",
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
@@ -69,22 +62,11 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#f97316",
-          "sounds": [
-            "./assets/sounds/siren.wav",
-            "./assets/sounds/chase-start.wav"
-          ],
+          "sounds": ["./assets/sounds/siren.wav", "./assets/sounds/chase-start.wav"],
           "defaultChannel": "chase_alerts"
         }
       ],
-      "expo-sensors",
-      "expo-secure-store",
-      [
-        "@stripe/stripe-react-native",
-        {
-          "merchantIdentifier": "merchant.com.pursuitzone",
-          "enableGooglePay": true
-        }
-      ]
+      "expo-sensors"
     ]
   }
 }

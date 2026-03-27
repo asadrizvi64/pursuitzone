@@ -57,13 +57,15 @@ export class ChaseEngine {
         wanted_user_id, wanted_level, zone_id,
         start_radius_km, current_radius_km, min_radius_km, shrink_phases,
         zone_center_lat, zone_center_lng,
+        zone_center_geom,
         heat_duration_sec, cooldown_duration_sec,
         wanted_fee, police_ticket, total_pool, platform_fee, reward_pool,
         min_police_required, max_police,
         status
       ) VALUES (
         $1, $2, $3, $4, $4, $5, $6, $7, $8,
-        $9, $10, $11, $12, $11, $13, $14, $15, 'matchmaking'
+        ST_SetSRID(ST_MakePoint($8, $7), 4326)::geography,
+        $9, $10, $11, $12, $11, $13, $14, $15, $16, 'matchmaking'
       ) RETURNING *`,
       [
         wantedUserId, wantedLevel, zoneId,

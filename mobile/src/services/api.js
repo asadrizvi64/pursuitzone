@@ -6,8 +6,9 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL
-  || (__DEV__ ? 'http://10.0.5.213:4000' : 'https://api.pursuitzone.io');
+const API_URL = __DEV__ 
+  ? 'http://192.168.1.100:4000' // Local dev — change to your machine IP
+  : 'https://api.pursuitzone.io';
 
 // ── HTTP Client ─────────────────────────────────
 const http = axios.create({ baseURL: `${API_URL}/api`, timeout: 15000 });
@@ -115,12 +116,8 @@ export const matchmaking = {
 // ── Wallet / Payments ───────────────────────────
 export const wallet = {
   getBalance: () => http.get('/wallet/balance'),
-  submitDepositProof: (data) => http.post('/wallet/deposit-proof', data),
-  getDeposits: () => http.get('/wallet/deposits'),
+  createPaymentIntent: (amount) => http.post('/wallet/deposit', { amount }),
   requestWithdrawal: (amount, method) => http.post('/wallet/withdraw', { amount, method }),
-  // Admin
-  getPendingDeposits: () => http.get('/wallet/admin/pending'),
-  reviewDeposit: (id, decision, note) => http.post(`/wallet/admin/review/${id}`, { decision, note }),
 };
 
 export default { auth, chases, user, notifications, matchmaking, wallet };

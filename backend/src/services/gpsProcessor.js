@@ -98,12 +98,14 @@ export class GPSProcessor {
           `($${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, ` +
           `$${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, ` +
           `$${paramIdx++}, $${paramIdx++}, ` +
+          `ST_SetSRID(ST_MakePoint($${paramIdx++}, $${paramIdx++}), 4326)::geography, ` +
           `$${paramIdx++})`
         );
         params.push(
           p.chase_id, p.user_id, p.lat, p.lng,
           p.altitude, p.accuracy, p.speed, p.heading,
           p.altitude_source, p.is_mock_location,
+          p.lng, p.lat, // ST_MakePoint takes (lng, lat)
           p.recorded_at
         );
       }

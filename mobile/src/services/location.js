@@ -34,20 +34,13 @@ class LocationService {
    */
   async requestPermissions() {
     const { status: fg } = await Location.requestForegroundPermissionsAsync();
-    if (fg !== 'granted') {
-      console.warn('[Location] Foreground permission denied — location features limited');
-      return false;
-    }
+    if (fg !== 'granted') throw new Error('Foreground location permission required');
 
-    // Request background for active chases (don't request in Expo Go — it may not support it)
+    // Request background for active chases
     if (Platform.OS !== 'web') {
-      try {
-        const { status: bg } = await Location.requestBackgroundPermissionsAsync();
-        if (bg !== 'granted') {
-          console.warn('[Location] Background permission denied — chase will pause if app backgrounded');
-        }
-      } catch (err) {
-        console.warn('[Location] Background location not available:', err.message);
+      const { status: bg } = await Location.requestBackgroundPermissionsAsync();
+      if (bg !== 'granted') {
+        console.warn('[Location] Background permission denied — chase will pause if app backgrounded');
       }
     }
 
