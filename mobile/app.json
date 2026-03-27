@@ -1,0 +1,90 @@
+{
+  "expo": {
+    "name": "PursuitZone",
+    "slug": "pursuit-zone",
+    "version": "3.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "pursuitzone",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#080808"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "io.pursuitzone.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "PursuitZone needs your location for live chase tracking and geofence enforcement.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "PursuitZone needs background location to track your chase position even when the app is minimized.",
+        "NSMotionUsageDescription": "PursuitZone uses motion sensors for altitude detection and anti-spoofing.",
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "remote-notification"
+        ]
+      },
+      "config": {
+        "googleMapsApiKey": "YOUR_IOS_MAPS_KEY"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#080808"
+      },
+      "package": "io.pursuitzone.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "HIGH_SAMPLING_RATE_SENSORS"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_ANDROID_MAPS_KEY"
+        }
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "PursuitZone needs your location for live chase tracking and geofence enforcement.",
+          "locationAlwaysAndWhenInUsePermission": "PursuitZone needs background location for live chase tracking.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#f97316",
+          "sounds": [
+            "./assets/sounds/siren.wav",
+            "./assets/sounds/chase-start.wav"
+          ],
+          "defaultChannel": "chase_alerts"
+        }
+      ],
+      "expo-sensors",
+      "expo-secure-store",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.pursuitzone",
+          "enableGooglePay": true
+        }
+      ]
+    ]
+  }
+}

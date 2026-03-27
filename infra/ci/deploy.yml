@@ -1,0 +1,143 @@
+# ═══════════════════════════════════════════════════════════════
+# PURSUIT ZONE — CI/CD Pipeline
+# Build → Test → Push to GHCR → Deploy to EKS
+# ═══════════════════════════════════════════════════════════════
+
+name: Deploy PursuitZone
+
+on:
+  push:
+    branches: [main]
+    paths: ['backend/**']
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/api
+  EKS_CLUSTER: pursuitzone-production-eks
+  AWS_REGION: us-east-1
+
+jobs:
+  # ── Test ────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_DB: pursuitzone_test
+          POSTGRES_USER: pursuit
+          POSTGRES_PASSWORD: testpass
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: cd backend && npm ci
+      - run: cd backend && npm test
+        env:
+          DATABASE_URL: postgres://pursuit:testpass@localhost:5432/pursuitzone_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret
+
+  # ── Build & Push Docker Image ──────────────
+  build:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Deploy to EKS ─────────────────────────
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      # Update image tag in deployment
+      - run: |
+          kubectl set image deployment/api \
+            api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -n pursuitzone
+
+          kubectl set image deployment/worker \
+            worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -n pursuitzone
+
+      # Wait for rollout
+      - run: |
+          kubectl rollout status deployment/api -n pursuitzone --timeout=300s
+          kubectl rollout status deployment/worker -n pursuitzone --timeout=300s
+
+      # Run DB migrations
+      - run: |
+          kubectl exec deployment/api -n pursuitzone -- \
+            node -e "
+              const { Pool } = require('pg');
+              const fs = require('fs');
+              const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+              pool.query(fs.readFileSync('src/models/migrations.sql', 'utf8'))
+                .then(() => { console.log('Migrations complete'); process.exit(0); })
+                .catch(e => { console.error(e); process.exit(1); });
+            "
+
+      # Verify deployment
+      - run: |
+          API_URL=$(kubectl get ingress api-ingress -n pursuitzone -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          curl -sf "https://${API_URL}/health" || exit 1
+          echo "✅ Deployment verified"

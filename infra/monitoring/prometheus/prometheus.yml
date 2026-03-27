@@ -1,0 +1,88 @@
+# ═══════════════════════════════════════════════
+# Prometheus — Scrape config for PursuitZone
+# ═══════════════════════════════════════════════
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+rule_files:
+  - "alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  # API servers (auto-discover pods)
+  - job_name: 'pursuitzone-api'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_component]
+        regex: api
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+        target_label: __address__
+        regex: (.+)
+        replacement: ${1}:4000
+
+  # Node exporter
+  - job_name: 'node'
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: (.+):(.+)
+        replacement: ${1}:9100
+        target_label: __address__
+
+  # PostgreSQL
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+---
+# Alert rules
+# alerts.yml
+groups:
+  - name: pursuitzone
+    rules:
+      - alert: HighSocketConnections
+        expr: pursuitzone_connected_sockets > 5000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High WebSocket connections ({{ $value }})"
+
+      - alert: APIHighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: pursuitzone_db_pool_waiting > 5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DB pool has {{ $value }} waiting connections"
+
+      - alert: GPSBatchErrors
+        expr: rate(pursuitzone_gps_batch_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total{namespace="pursuitzone"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical

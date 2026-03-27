@@ -1,0 +1,191 @@
+# ═══════════════════════════════════════════════════════════════
+# PgBouncer — Connection pooling between K8s pods and RDS
+# ═══════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgbouncer
+  labels:
+    app: pursuitzone
+    component: pgbouncer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pursuitzone
+      component: pgbouncer
+  template:
+    metadata:
+      labels:
+        app: pursuitzone
+        component: pgbouncer
+    spec:
+      containers:
+        - name: pgbouncer
+          image: edoburu/pgbouncer:1.21.0
+          ports:
+            - containerPort: 5432
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: database-url
+            - name: POOL_MODE
+              value: "transaction"
+            - name: MAX_CLIENT_CONN
+              value: "2000"
+            - name: DEFAULT_POOL_SIZE
+              value: "50"
+            - name: RESERVE_POOL_SIZE
+              value: "10"
+            - name: SERVER_IDLE_TIMEOUT
+              value: "300"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgbouncer
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: pursuitzone
+    component: pgbouncer
+---
+# ═══════════════════════════════════════════════════════════════
+# Prometheus + Grafana via Helm chart values
+# Install: helm install monitoring prometheus-community/kube-prometheus-stack -f monitoring-values.yaml
+# ═══════════════════════════════════════════════════════════════
+# monitoring-values.yaml content below is for reference:
+# 
+# prometheus:
+#   prometheusSpec:
+#     additionalScrapeConfigs:
+#       - job_name: pursuitzone-api
+#         kubernetes_sd_configs:
+#           - role: pod
+#             namespaces:
+#               names: [pursuitzone]
+#         relabel_configs:
+#           - source_labels: [__meta_kubernetes_pod_label_component]
+#             regex: api
+#             action: keep
+#
+# grafana:
+#   adminPassword: "CHANGE_ME"
+#   dashboardProviders:
+#     dashboardproviders.yaml:
+#       apiVersion: 1
+#       providers:
+#         - name: pursuitzone
+#           folder: PursuitZone
+#           type: file
+#           options:
+#             path: /var/lib/grafana/dashboards
+---
+# ═══════════════════════════════════════════════════════════════
+# Redis Exporter — Metrics from ElastiCache
+# ═══════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+    spec:
+      containers:
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.58.0
+          ports:
+            - containerPort: 9121
+          env:
+            - name: REDIS_ADDR
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: redis-url
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+spec:
+  ports:
+    - port: 9121
+  selector:
+    app: redis-exporter
+---
+# ═══════════════════════════════════════════════════════════════
+# Postgres Exporter — Metrics from RDS
+# ═══════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-exporter
+  template:
+    metadata:
+      labels:
+        app: postgres-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+    spec:
+      containers:
+        - name: postgres-exporter
+          image: prometheuscommunity/postgres-exporter:v0.15.0
+          ports:
+            - containerPort: 9187
+          env:
+            - name: DATA_SOURCE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: database-url
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-exporter
+spec:
+  ports:
+    - port: 9187
+  selector:
+    app: postgres-exporter

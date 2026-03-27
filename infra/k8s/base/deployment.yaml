@@ -1,0 +1,312 @@
+# ═══════════════════════════════════════════════════════════════
+# API Deployment — Handles REST + WebSocket (Socket.io)
+# Sticky sessions required for WebSocket connection persistence
+# ═══════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app: pursuitzone
+    component: api
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: pursuitzone
+      component: api
+  template:
+    metadata:
+      labels:
+        app: pursuitzone
+        component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4000"
+        prometheus.io/path: "/metrics"
+    spec:
+      nodeSelector:
+        workload: api
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: api
+          image: ghcr.io/pursuitzone/api:latest
+          command: ["node", "src/server.production.js"]
+          ports:
+            - containerPort: 4000
+              name: http
+              protocol: TCP
+          env:
+            - name: SERVER_ROLE
+              value: "api"
+            - name: PORT
+              value: "4000"
+            - name: NODE_ENV
+              value: "production"
+            - name: ENABLE_CLUSTER
+              value: "false"  # K8s handles scaling, not Node cluster
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: database-url
+            - name: DATABASE_READ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: database-read-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: redis-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: jwt-secret
+            - name: FIREBASE_SERVICE_ACCOUNT
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: firebase-sa
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: stripe-key
+            - name: DB_POOL_MAX
+              value: "15"
+            - name: DB_POOL_MIN
+              value: "3"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 4000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+---
+# ═══════════════════════════════════════════════════════════════
+# Worker Deployment — Background jobs (matchmaking, geofence, etc.)
+# Only one active leader to avoid duplicate job execution
+# ═══════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app: pursuitzone
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pursuitzone
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: pursuitzone
+        component: worker
+    spec:
+      nodeSelector:
+        workload: worker
+      containers:
+        - name: worker
+          image: ghcr.io/pursuitzone/api:latest
+          command: ["node", "src/server.production.js"]
+          env:
+            - name: SERVER_ROLE
+              value: "worker"
+            - name: PORT
+              value: "4001"
+            - name: NODE_ENV
+              value: "production"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: redis-url
+            - name: FIREBASE_SERVICE_ACCOUNT
+              valueFrom:
+                secretKeyRef:
+                  name: pursuitzone-secrets
+                  key: firebase-sa
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "384Mi"
+            limits:
+              cpu: "1000m"
+              memory: "768Mi"
+---
+# ═══════════════════════════════════════════════════════════════
+# Service — Internal ClusterIP with session affinity for WebSocket
+# ═══════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    app: pursuitzone
+    component: api
+spec:
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
+  ports:
+    - port: 4000
+      targetPort: 4000
+      protocol: TCP
+      name: http
+  selector:
+    app: pursuitzone
+    component: api
+---
+# ═══════════════════════════════════════════════════════════════
+# Ingress — ALB with WebSocket support + sticky sessions
+# ═══════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-ingress
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERTIFICATE_ARN}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # CRITICAL: Sticky sessions for WebSocket
+    alb.ingress.kubernetes.io/target-group-attributes: >
+      stickiness.enabled=true,
+      stickiness.type=app_cookie,
+      stickiness.app_cookie.cookie_name=io,
+      stickiness.app_cookie.duration_seconds=86400
+    # WebSocket idle timeout — 1 hour
+    alb.ingress.kubernetes.io/load-balancer-attributes: >
+      idle_timeout.timeout_seconds=3600
+    # Health check
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "10"
+spec:
+  rules:
+    - host: api.pursuitzone.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 4000
+---
+# ═══════════════════════════════════════════════════════════════
+# HPA — Auto-scale API pods based on CPU + WebSocket connections
+# ═══════════════════════════════════════════════════════════════
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 3
+  maxReplicas: 50
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Pods
+      pods:
+        metric:
+          name: pursuitzone_connected_sockets
+        target:
+          type: AverageValue
+          averageValue: "800"    # Scale up when avg 800 sockets per pod
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 3
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+---
+# ═══════════════════════════════════════════════════════════════
+# PodDisruptionBudget — Ensure minimum availability
+# ═══════════════════════════════════════════════════════════════
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: pursuitzone
+      component: api
+---
+# ═══════════════════════════════════════════════════════════════
+# Secrets — Encrypted at rest in K8s etcd
+# Apply via: kubectl create secret generic pursuitzone-secrets --from-env-file=.env
+# ═══════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pursuitzone-secrets
+type: Opaque
+stringData:
+  database-url: "postgres://pursuit:PASSWORD@pursuitzone-db.xxx.us-east-1.rds.amazonaws.com:5432/pursuitzone"
+  database-read-url: "postgres://pursuit:PASSWORD@pursuitzone-db-read.xxx.us-east-1.rds.amazonaws.com:5432/pursuitzone"
+  redis-url: "rediss://pursuitzone-redis.xxx.cache.amazonaws.com:6379"
+  jwt-secret: "CHANGE_ME_TO_RANDOM_64_CHAR_STRING"
+  firebase-sa: '{"type":"service_account"}'
+  stripe-key: "sk_live_xxx"

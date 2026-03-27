@@ -1,0 +1,35 @@
+# ═══════════════════════════════════════════════
+# PURSUIT ZONE — Production Dockerfile
+# Multi-stage build, distroless base, ~80MB final
+# ═══════════════════════════════════════════════
+
+# Stage 1: Install dependencies
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production --ignore-scripts && \
+    npm cache clean --force
+
+# Stage 2: Production image
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+# Security: non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S pursuitzone -u 1001 -G nodejs
+
+# Copy only what we need
+COPY --from=deps --chown=pursuitzone:nodejs /app/node_modules ./node_modules
+COPY --chown=pursuitzone:nodejs src/ ./src/
+COPY --chown=pursuitzone:nodejs package.json ./
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-4000}/health || exit 1
+
+USER pursuitzone
+
+EXPOSE 4000
+
+# Use production server
+CMD ["node", "--max-old-space-size=768", "src/server.production.js"]

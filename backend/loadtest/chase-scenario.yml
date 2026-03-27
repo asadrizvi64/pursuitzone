@@ -1,0 +1,126 @@
+# ═══════════════════════════════════════════════════════════════
+# PURSUIT ZONE — Load Test Scenario
+# Simulates realistic multi-user, multi-chase traffic
+#
+# Run: npx artillery run loadtest/chase-scenario.yml
+# ═══════════════════════════════════════════════════════════════
+
+config:
+  target: "https://api.pursuitzone.io"
+  phases:
+    # Warm up — 10 users over 30 seconds
+    - duration: 30
+      arrivalRate: 10
+      name: "Warm up"
+    
+    # Ramp up — 50 users/sec over 2 minutes
+    - duration: 120
+      arrivalRate: 50
+      name: "Ramp up"
+    
+    # Sustained load — 200 users/sec for 5 minutes
+    - duration: 300
+      arrivalRate: 200
+      name: "Sustained load"
+    
+    # Peak spike — 500 users/sec for 1 minute
+    - duration: 60
+      arrivalRate: 500
+      name: "Peak spike"
+
+  # Socket.io engine for WebSocket testing
+  engines:
+    socketio-v3: {}
+  
+  socketio:
+    transports: ["websocket"]
+    auth:
+      token: "{{ $processEnvironment.TEST_JWT_TOKEN }}"
+
+  variables:
+    cities:
+      - { lat: 33.7104, lng: 73.0561, name: "Islamabad" }
+      - { lat: 24.8045, lng: 67.0420, name: "Karachi" }
+      - { lat: 34.0522, lng: -118.2437, name: "LA" }
+      - { lat: 35.6762, lng: 139.6503, name: "Tokyo" }
+
+  ensure:
+    # Performance SLOs
+    - p99: 500          # 99th percentile under 500ms
+    - p95: 200          # 95th percentile under 200ms
+    - median: 50        # Median under 50ms
+    - maxErrorRate: 1   # Less than 1% error rate
+
+scenarios:
+  # ── Scenario 1: Browse active chases (50% of traffic) ──
+  - name: "Browse chases"
+    weight: 50
+    flow:
+      - get:
+          url: "/api/chases/active?lat=33.71&lng=73.05&radiusKm=50"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.TEST_JWT_TOKEN }}"
+          capture:
+            - json: "$.chases[0].id"
+              as: "chaseId"
+      - think: 2
+      - get:
+          url: "/api/chases/{{ chaseId }}/economy"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.TEST_JWT_TOKEN }}"
+
+  # ── Scenario 2: GPS streaming (30% of traffic) ──
+  - name: "GPS streaming"
+    weight: 30
+    engine: socketio-v3
+    flow:
+      - emit:
+          channel: "join_chase"
+          data:
+            chaseId: "test-chase-001"
+            role: "police"
+      # Simulate 30 seconds of GPS updates at 1/sec
+      - loop:
+          - emit:
+              channel: "gps_update"
+              data:
+                chaseId: "test-chase-001"
+                lat: "{{ $randomNumber(33700, 33730) / 1000 }}"
+                lng: "{{ $randomNumber(73030, 73070) / 1000 }}"
+                altitude: "{{ $randomNumber(300, 400) }}"
+                accuracy: "{{ $randomNumber(3, 15) }}"
+                speed: "{{ $randomNumber(0, 80) }}"
+                heading: "{{ $randomNumber(0, 360) }}"
+                isMockLocation: false
+          - think: 1
+        count: 30
+
+  # ── Scenario 3: Create chase + matchmaking (10% of traffic) ──
+  - name: "Create chase"
+    weight: 10
+    flow:
+      - post:
+          url: "/api/chases"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.TEST_JWT_TOKEN }}"
+          json:
+            wantedLevel: "{{ $randomNumber(1, 5) }}"
+            zoneId: "test-zone-islamabad"
+      - think: 5
+      - get:
+          url: "/api/matchmaking/nearby?lat=33.71&lng=73.05"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.TEST_JWT_TOKEN }}"
+
+  # ── Scenario 4: Location updates (10% of traffic) ──
+  - name: "Idle location"
+    weight: 10
+    flow:
+      - put:
+          url: "/api/users/me/location"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.TEST_JWT_TOKEN }}"
+          json:
+            lat: "{{ $randomNumber(33690, 33730) / 1000 }}"
+            lng: "{{ $randomNumber(73020, 73070) / 1000 }}"
+            altitude: 350
