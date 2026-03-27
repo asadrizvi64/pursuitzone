@@ -44,7 +44,7 @@ export class NotificationService {
       'SELECT fcm_token, apns_token FROM users WHERE id = $1', [userId]
     );
 
-    if (user?.fcm_token) {
+    if (user?.fcm_token && this.firebase) {
       try {
         await this.firebase.messaging().send({
           token: user.fcm_token,

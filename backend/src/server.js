@@ -33,12 +33,29 @@ const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
 // ── Database ────────────────────────────────────────
 const db = new Pool({ connectionString: DATABASE_URL, max: 20 });
-const redis = new Redis(REDIS_URL);
+let redis;
+try {
+  redis = new Redis(REDIS_URL, { maxRetriesPerRequest: 3, retryStrategy: (times) => times > 3 ? null : Math.min(times * 200, 2000) });
+  redis.on('error', (err) => console.warn('[Redis] Connection error:', err.message));
+} catch (err) {
+  console.warn('[Redis] Failed to connect:', err.message);
+  redis = null;
+}
 
 // ── Firebase (Push Notifications) ───────────────────
-admin.initializeApp({
-  credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)),
-});
+let firebaseEnabled = false;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)),
+    });
+    firebaseEnabled = true;
+  } catch (err) {
+    console.warn('[Firebase] Failed to initialize:', err.message);
+  }
+} else {
+  console.warn('[Firebase] FIREBASE_SERVICE_ACCOUNT not set — push notifications disabled');
+}
 
 // ── Express App ─────────────────────────────────────
 const app = express();
@@ -51,7 +68,7 @@ app.use(rateLimit({ windowMs: 60 * 1000, max: 120 }));
 
 // ── Services ────────────────────────────────────────
 const economy = new EconomyService(db);
-const notification = new NotificationService(db, redis, admin);
+const notification = new NotificationService(db, redis, firebaseEnabled ? admin : null);
 const geofence = new GeofenceService(db, redis);
 const antiCollusion = new AntiCollusionService(db);
 const matchmaking = new MatchmakingService(db, redis, notification);
