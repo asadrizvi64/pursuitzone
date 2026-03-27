@@ -13,10 +13,9 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import admin from 'firebase-admin';
 
-import { setupChaseRoutes } from './routes/chase.js';
-import { setupUserRoutes } from './routes/user.js';
-import { setupNotificationRoutes } from './routes/notification.js';
-import { setupMatchmakingRoutes } from './routes/matchmaking.js';
+import { setupChaseRoutes, setupUserRoutes, setupNotificationRoutes, setupMatchmakingRoutes } from './routes/chase.js';
+import { setupAuthRoutes } from './routes/auth.js';
+import { setupWalletRoutes } from './routes/wallet.js';
 import { MatchmakingService } from './services/matchmaking.js';
 import { NotificationService } from './services/notification.js';
 import { GeofenceService } from './services/geofence.js';
@@ -95,9 +94,11 @@ io.use(async (socket, next) => {
 setupSocketHandlers(io, chaseEngine, geofence, antiCollusion, notification);
 
 // ── REST Routes ─────────────────────────────────────
+app.use('/api/auth', setupAuthRoutes(db));
 app.use('/api/users', setupUserRoutes(db, economy));
 app.use('/api/chases', setupChaseRoutes(db, chaseEngine, economy));
 app.use('/api/notifications', setupNotificationRoutes(db, notification));
+app.use('/api/wallet', setupWalletRoutes(db));
 app.use('/api/matchmaking', setupMatchmakingRoutes(db, matchmaking));
 
 // Health check
